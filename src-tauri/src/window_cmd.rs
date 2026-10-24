@@ -994,6 +994,9 @@ pub fn hide_pet(app: AppHandle) -> Result<(), String> {
 /// keeps the fallback corner clear of the menu bar and Dock.
 pub const PET_FALLBACK_INSET: i32 = 96;
 
+/// Display rect as ((origin_x, origin_y), (width, height)), physical px.
+pub type PhysicalDisplayRect = ((i32, i32), (u32, u32));
+
 /// Decide where to place the pet when its persisted (physical) origin may be
 /// stale. Coordinates that still fall inside a connected display are kept;
 /// anything else is replaced with a visible bottom-right slot on the primary
@@ -1001,8 +1004,8 @@ pub const PET_FALLBACK_INSET: i32 = 96;
 pub fn pet_restore_position(
     stored: (i32, i32),
     size: i32,
-    monitors: &[((i32, i32), (u32, u32))],
-    primary: Option<((i32, i32), (u32, u32))>,
+    monitors: &[PhysicalDisplayRect],
+    primary: Option<PhysicalDisplayRect>,
 ) -> (i32, i32) {
     let (x, y) = stored;
     let size = size.max(1);
@@ -1018,11 +1021,14 @@ pub fn pet_restore_position(
     };
     let inset_x = (width as i32 - size - PET_FALLBACK_INSET).max(PET_FALLBACK_INSET);
     let inset_y = (height as i32 - size - PET_FALLBACK_INSET).max(PET_FALLBACK_INSET);
-    (origin_x.saturating_add(inset_x), origin_y.saturating_add(inset_y))
+    (
+        origin_x.saturating_add(inset_x),
+        origin_y.saturating_add(inset_y),
+    )
 }
 
 /// Map a monitor onto ((origin_x, origin_y), (width, height)), physical px.
-fn monitor_rect(monitor: &tauri::window::Monitor) -> ((i32, i32), (u32, u32)) {
+fn monitor_rect(monitor: &tauri::window::Monitor) -> PhysicalDisplayRect {
     let origin = monitor.position();
     let size = monitor.size();
     ((origin.x, origin.y), (size.width, size.height))
@@ -1041,7 +1047,7 @@ pub fn clamp_pet_restore_position(
     let monitors = app
         .available_monitors()
         .map_err(|error| format!("failed to list monitors: {error}"))?;
-    let monitors: Vec<((i32, i32), (u32, u32))> = monitors.iter().map(monitor_rect).collect();
+    let monitors: Vec<PhysicalDisplayRect> = monitors.iter().map(monitor_rect).collect();
     let primary = app
         .primary_monitor()
         .map_err(|error| format!("failed to read primary monitor: {error}"))?
