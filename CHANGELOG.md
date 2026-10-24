@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.4] - 2026-10-24
+
+### Fixed
+
+- macOS 12 chat crash: `remark-gfm` compiles an email autolink regex with a lookbehind assertion, which WebKit rejects (`SyntaxError: invalid group specifier name`) on the first markdown render — the whole chat window unmounted into an empty transparent frame. The dependency is now patched (via `patch-package`, applied on `postinstall`) to drop the lookbehind the same way the URL autolink already worked; the boundary is still enforced by the library's own character check
+- Any window that hits a render error now shows an inline error card instead of unmounting into a blank transparent frame that swallows clicks
+
 ## [0.2.3] - 2026-10-24
 
 ### Fixed

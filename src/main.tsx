@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 
 import "./App.css";
+import ErrorGate from "./components/ErrorGate";
 import { installDiagnostics } from "./diagnostics";
 import { getWindowLabel } from "./lib/tauriWindowApi";
 import ChatWindow from "./windows/ChatWindow";
@@ -33,5 +34,7 @@ const root =
   );
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  <React.StrictMode>{root}</React.StrictMode>,
+  <React.StrictMode>
+    <ErrorGate label={label}>{root}</ErrorGate>
+  </React.StrictMode>,
 );

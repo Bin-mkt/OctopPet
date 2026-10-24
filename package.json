@@ -1,7 +1,7 @@
 {
   "name": "octop-pet",
   "private": true,
-  "version": "0.2.3",
+  "version": "0.2.4",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -14,7 +14,8 @@
     "sync-version": "node scripts/sync-version.mjs",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
@@ -42,6 +43,7 @@
     "eslint-plugin-react-refresh": "^0.5.3",
     "globals": "^17.9.0",
     "jsdom": "^27.0.1",
+    "patch-package": "^8.0.1",
     "prettier": "^3.9.6",
     "typescript": "~5.8.3",
     "typescript-eslint": "^8.66.0",
