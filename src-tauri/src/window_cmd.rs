@@ -734,6 +734,10 @@ fn apply_bottom_anchored_size_macos(
                 frame.size.height = frame_h;
                 if !animate {
                     ns_window.setFrame_display(frame, true);
+                    // Transparent WKWebView windows sometimes stop compositing
+                    // right after a programmatic resize; re-asserting the
+                    // shadow forces Core Animation to rebuild the layer tree.
+                    ns_window.invalidateShadow();
                     return;
                 }
                 NSAnimationContext::beginGrouping();

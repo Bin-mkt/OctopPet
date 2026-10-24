@@ -1,4 +1,5 @@
 pub mod config_cmd;
+pub mod diagnostics_cmd;
 pub mod secrets_cmd;
 pub mod tray;
 pub mod window_cmd;
@@ -54,6 +55,7 @@ pub fn run() {
             window_cmd::hide_pet,
             window_cmd::clamp_pet_restore_position,
             window_cmd::pet_screen_bounds,
+            diagnostics_cmd::append_diagnostic_line,
             window_cmd::show_settings,
             window_cmd::place_window_bottom_center,
             window_cmd::place_window_centered,

@@ -59,9 +59,15 @@ export async function setPetWebviewLogicalPosition(
 }
 
 export async function setPetWebviewLogicalSize(size: number): Promise<void> {
-  await getPetWebviewWindow()
+  // A non-resizable window rejects content-size changes on some platforms
+  // (the pet renders with resizable: false), so flip the flag for the resize
+  // command itself.
+  const win = getPetWebviewWindow();
+  await win.setResizable(true).catch(() => undefined);
+  await win
     .setSize(new LogicalSize(size, size))
     .catch((error) => console.error("调整宠物大小失败", error));
+  await win.setResizable(false).catch(() => undefined);
 }
 
 export async function startPetWebviewDrag(): Promise<void> {

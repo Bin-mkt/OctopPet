@@ -2,12 +2,14 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 
 import "./App.css";
+import { installDiagnostics } from "./diagnostics";
 import { getWindowLabel } from "./lib/tauriWindowApi";
 import ChatWindow from "./windows/ChatWindow";
 import PetWindow from "./windows/PetWindow";
 import SettingsWindow from "./windows/SettingsWindow";
 
 const label = getWindowLabel();
+installDiagnostics(label);
 document.documentElement.dataset.windowLabel = label;
 
 // Pet must paint fully clear before React mounts. `color-scheme: light` +

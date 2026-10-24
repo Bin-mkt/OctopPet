@@ -4,6 +4,7 @@ import {
   getCurrentWindow,
 } from "@tauri-apps/api/window";
 
+import { logWindowProbe } from "../diagnostics";
 import { tauriApi } from "./tauriApi";
 
 export type ResizeEdge = "South" | "East" | "SouthEast";
@@ -21,10 +22,23 @@ export async function applyBottomAnchoredSize(size: {
   height: number;
   animate?: boolean;
 }): Promise<void> {
+  // Probe: the chat window goes blank in some sessions right after the first
+  // resize, so log the requested and resulting geometry for diagnosis.
+  const label = getWindowLabel();
+  logWindowProbe(
+    label,
+    "resize-request",
+    `${size.width}x${size.height} animate=${Boolean(size.animate)}`,
+  );
   await tauriApi.applyBottomAnchoredSize(
     size.width,
     size.height,
     Boolean(size.animate),
+  );
+  logWindowProbe(
+    label,
+    "resize-applied",
+    `viewport=${window.innerWidth}x${window.innerHeight} hidden=${document.hidden}`,
   );
 }
 

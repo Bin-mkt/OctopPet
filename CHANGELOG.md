@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.3] - 2026-10-24
+
+### Fixed
+
+- Pet resize handle works on macOS: the pet window renders with `resizable: false`, which on macOS ignores content-size changes — the handle now lifts the flag for the resize command itself
+- macOS chat window: re-asserts the window shadow right after the compact↔expanded resize, which can otherwise stop the transparent webview from compositing (the "empty frame with shadow" state)
+
+### Added
+
+- Diagnostic logging: uncaught JS errors, promise rejections, and window lifecycle probes are recorded to `diagnostics.log` in the app config directory so bug sessions can be reconstructed (capped at 2 MiB, rotates in place)
+
 ## [0.2.2] - 2026-10-24
 
 ### Fixed
