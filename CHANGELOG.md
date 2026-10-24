@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-10-24
+
+### Fixed
+
+- macOS: dragging the pet no longer throws it off-screen — the drag math mixed CSS logical and physical pixels, saving coordinates far outside the desktop
+- A pet last parked off-screen (e.g. left on a disconnected external display) reappears on the primary display instead of staying invisible on startup
+- The pet glides to a stop inside the display it started on instead of sliding into the gap between monitors
+- Dragging the pet between mixed-DPI displays (retina notebook + regular external screen) no longer jumps at the screen seam
+
 ## [0.2.0] - 2026-09-03
 
 ### Fixed

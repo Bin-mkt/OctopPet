@@ -990,6 +990,84 @@ pub fn hide_pet(app: AppHandle) -> Result<(), String> {
         .map_err(|error| format!("failed to hide pet window: {error}"))
 }
 
+/// Physical-pixel inset applied when a corrupted pet position has to be reset;
+/// keeps the fallback corner clear of the menu bar and Dock.
+pub const PET_FALLBACK_INSET: i32 = 96;
+
+/// Decide where to place the pet when its persisted (physical) origin may be
+/// stale. Coordinates that still fall inside a connected display are kept;
+/// anything else is replaced with a visible bottom-right slot on the primary
+/// display. Pure so the geometry can be unit tested without an AppHandle.
+pub fn pet_restore_position(
+    stored: (i32, i32),
+    size: i32,
+    monitors: &[((i32, i32), (u32, u32))],
+    primary: Option<((i32, i32), (u32, u32))>,
+) -> (i32, i32) {
+    let (x, y) = stored;
+    let size = size.max(1);
+    for &((origin_x, origin_y), (width, height)) in monitors {
+        let right = origin_x.saturating_add(width as i32);
+        let bottom = origin_y.saturating_add(height as i32);
+        if x >= origin_x && y >= origin_y && x < right && y < bottom {
+            return stored;
+        }
+    }
+    let Some(((origin_x, origin_y), (width, height))) = primary else {
+        return stored;
+    };
+    let inset_x = (width as i32 - size - PET_FALLBACK_INSET).max(PET_FALLBACK_INSET);
+    let inset_y = (height as i32 - size - PET_FALLBACK_INSET).max(PET_FALLBACK_INSET);
+    (origin_x.saturating_add(inset_x), origin_y.saturating_add(inset_y))
+}
+
+/// Map a monitor onto ((origin_x, origin_y), (width, height)), physical px.
+fn monitor_rect(monitor: &tauri::window::Monitor) -> ((i32, i32), (u32, u32)) {
+    let origin = monitor.position();
+    let size = monitor.size();
+    ((origin.x, origin.y), (size.width, size.height))
+}
+
+/// Validate a persisted pet position (physical pixels) against the connected
+/// displays. The previous drag code mixed logical and physical units, which
+/// could save coordinates far outside the desktop; this command heals them.
+#[tauri::command]
+pub fn clamp_pet_restore_position(
+    app: AppHandle,
+    x: f64,
+    y: f64,
+    size: f64,
+) -> Result<(i32, i32), String> {
+    let monitors = app
+        .available_monitors()
+        .map_err(|error| format!("failed to list monitors: {error}"))?;
+    let monitors: Vec<((i32, i32), (u32, u32))> = monitors.iter().map(monitor_rect).collect();
+    let primary = app
+        .primary_monitor()
+        .map_err(|error| format!("failed to read primary monitor: {error}"))?
+        .map(|monitor| monitor_rect(&monitor));
+    Ok(pet_restore_position(
+        (x.round() as i32, y.round() as i32),
+        size.round() as i32,
+        &monitors,
+        primary,
+    ))
+}
+
+/// Physical rects (x, y, width, height) of every connected display, so the
+/// frontend can clamp the pet's glide inside the screen it is gliding on.
+#[tauri::command]
+pub fn pet_screen_bounds(app: AppHandle) -> Result<Vec<(i32, i32, u32, u32)>, String> {
+    let monitors = app
+        .available_monitors()
+        .map_err(|error| format!("failed to list monitors: {error}"))?;
+    Ok(monitors
+        .iter()
+        .map(monitor_rect)
+        .map(|((x, y), (width, height))| (x, y, width, height))
+        .collect())
+}
+
 #[tauri::command]
 pub fn show_settings(app: AppHandle) -> Result<(), String> {
     let settings = app

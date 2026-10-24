@@ -16,6 +16,14 @@ export const tauriApi = {
   showChatNearPet: () => invoke<void>("show_chat_near_pet"),
   hideChat: () => invoke<void>("hide_chat"),
   hidePet: () => invoke<void>("hide_pet"),
+  // Returns physical-pixel coordinates that are guaranteed to sit on a
+  // connected display; off-screen persisted positions fall back to a visible
+  // corner of the primary monitor.
+  clampPetRestorePosition: (x: number, y: number, size: number) =>
+    invoke<[number, number]>("clamp_pet_restore_position", { x, y, size }),
+  // Physical rects [x, y, width, height] of every connected display.
+  petScreenBounds: () =>
+    invoke<Array<[number, number, number, number]>>("pet_screen_bounds"),
   showSettings: () => invoke<void>("show_settings"),
   placeWindowBottomCenter: (label: string) =>
     invoke<void>("place_window_bottom_center", { label }),

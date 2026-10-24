@@ -12,8 +12,9 @@ use octop_pet_lib::{
     },
     window_cmd::{
         bottom_anchored_position, bottom_centered_position, centered_position, chat_position,
-        home_url, should_hide_on_close, should_hide_on_unfocus, transparent_chrome_target,
-        TransparentChromeTarget, CHAT_BOTTOM_GAP_LOGICAL, RESIZE_ANIMATION_DURATION,
+        home_url, pet_restore_position, should_hide_on_close, should_hide_on_unfocus,
+        transparent_chrome_target, TransparentChromeTarget, CHAT_BOTTOM_GAP_LOGICAL,
+        PET_FALLBACK_INSET, RESIZE_ANIMATION_DURATION,
     },
 };
 
@@ -308,4 +309,38 @@ fn transparent_chrome_targets_pet_and_dialogs() {
         Some(TransparentChromeTarget::Dialog)
     );
     assert_eq!(transparent_chrome_target("tray"), None);
+}
+
+#[test]
+fn pet_restore_position_keeps_on_screen_coordinates() {
+    let monitors = vec![((0, 0), (2560u32, 1600u32))];
+    assert_eq!(pet_restore_position((100, 200), 160, &monitors, None), (100, 200));
+    // Boundary counts as visible: the pet's origin is inside the display.
+    assert_eq!(pet_restore_position((2559, 1599), 160, &monitors, None), (2559, 1599));
+}
+
+#[test]
+fn pet_restore_position_rescues_off_screen_coordinates() {
+    let monitors = vec![((0, 0), (2560u32, 1600u32))];
+    let primary = Some(((0, 0), (2560u32, 1600u32)));
+    // (4546, 1348) is the real-world corrupted value from the mixed-unit bug.
+    assert_eq!(
+        pet_restore_position((4546, 1348), 160, &monitors, primary),
+        (2560 - 160 - PET_FALLBACK_INSET, 1600 - 160 - PET_FALLBACK_INSET)
+    );
+}
+
+#[test]
+fn pet_restore_position_keeps_secondary_monitor_positions() {
+    // Pet parked on a display sitting to the right of the primary one.
+    let monitors = vec![((0, 0), (2560u32, 1600u32)), ((2560, 0), (1920u32, 1080u32))];
+    assert_eq!(
+        pet_restore_position((3000, 500), 160, &monitors, None),
+        (3000, 500)
+    );
+}
+
+#[test]
+fn pet_restore_position_without_monitors_keeps_stored_value() {
+    assert_eq!(pet_restore_position((4546, 1348), 160, &[], None), (4546, 1348));
 }

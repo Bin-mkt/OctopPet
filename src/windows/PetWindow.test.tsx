@@ -21,6 +21,8 @@ const mocks = vi.hoisted(() => ({
   hidePet: vi.fn(),
   openHome: vi.fn(),
   listenMascotChanged: vi.fn(),
+  clampPetRestorePosition: vi.fn(),
+  petScreenBounds: vi.fn(),
   clearPetWebviewChrome: vi.fn(),
   setPetWebviewPosition: vi.fn(),
   startPetWebviewDrag: vi.fn(),
@@ -42,6 +44,8 @@ vi.mock("../lib/tauriApi", () => ({
     hidePet: mocks.hidePet,
     openHome: mocks.openHome,
     listenMascotChanged: mocks.listenMascotChanged,
+    clampPetRestorePosition: mocks.clampPetRestorePosition,
+    petScreenBounds: mocks.petScreenBounds,
   },
 }));
 
@@ -82,6 +86,10 @@ describe("PetWindow", () => {
     mocks.hidePet.mockResolvedValue(undefined);
     mocks.openHome.mockResolvedValue(undefined);
     mocks.listenMascotChanged.mockResolvedValue(vi.fn());
+    mocks.clampPetRestorePosition.mockImplementation(
+      async (x: number, y: number) => [x, y],
+    );
+    mocks.petScreenBounds.mockResolvedValue([]);
     mocks.clearPetWebviewChrome.mockResolvedValue(undefined);
     mocks.setPetWebviewPosition.mockResolvedValue(undefined);
     mocks.startPetWebviewDrag.mockResolvedValue(undefined);
@@ -139,9 +147,19 @@ describe("PetWindow", () => {
   });
 
   it("moves the window with setPosition on Windows instead of OS drag", async () => {
+    // Keep the drag origin deterministic: the persisted (120, 240), not a
+    // synthetic onMoved event.
+    let movedHandler:
+      ((position: { x: number; y: number }) => void) | undefined;
+    mocks.onPetWebviewMoved.mockImplementation(async (handler) => {
+      movedHandler = handler;
+      return vi.fn();
+    });
     mocks.petSupportsManualMotion.mockReturnValue(true);
     render(<PetWindow />);
-    await waitFor(() => expect(mocks.loadConfig).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(mocks.setPetWebviewPosition).toHaveBeenCalledWith(120, 240),
+    );
 
     const region = screen.getByTestId("pet-drag-region");
     fireEvent.pointerDown(region, {
@@ -159,10 +177,13 @@ describe("PetWindow", () => {
       button: 0,
     });
 
+    // window origin (120,240) + pointer travel (100->120, 200->200)
     await waitFor(() =>
-      expect(mocks.setPetWebviewLogicalPosition).toHaveBeenCalledWith(110, 188),
+      expect(mocks.setPetWebviewPosition).toHaveBeenCalledWith(140, 240),
     );
     expect(mocks.startPetWebviewDrag).not.toHaveBeenCalled();
+    expect(mocks.setPetWebviewLogicalPosition).not.toHaveBeenCalled();
+    expect(movedHandler).toBeDefined();
   });
 
   it("keeps moving briefly with inertia after a manual drag is released", async () => {
@@ -179,9 +200,12 @@ describe("PetWindow", () => {
       .mockReturnValueOnce(0)
       .mockReturnValueOnce(50)
       .mockReturnValue(50);
+    mocks.onPetWebviewMoved.mockImplementation(async () => vi.fn());
     mocks.petSupportsManualMotion.mockReturnValue(true);
     render(<PetWindow />);
-    await waitFor(() => expect(mocks.loadConfig).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(mocks.setPetWebviewPosition).toHaveBeenCalledWith(120, 240),
+    );
 
     const region = screen.getByTestId("pet-drag-region");
     fireEvent.pointerDown(region, {
@@ -198,15 +222,70 @@ describe("PetWindow", () => {
       screenX: 120,
       screenY: 200,
       pointerId: 1,
-      button: 0,
     });
     fireEvent.pointerUp(region, { pointerId: 1 });
 
     expect(frames).toHaveLength(1);
     act(() => frames.shift()?.(66));
-    const lastCall = mocks.setPetWebviewLogicalPosition.mock.calls.at(-1);
-    expect(lastCall?.[0]).toBeGreaterThan(110);
-    expect(lastCall?.[1]).toBe(188);
+    const lastCall = mocks.setPetWebviewPosition.mock.calls.at(-1);
+    expect(lastCall?.[0]).toBeGreaterThan(140);
+    expect(lastCall?.[1]).toBe(240);
+  });
+
+  it("rescues a persisted position that fell off-screen", async () => {
+    mocks.clampPetRestorePosition.mockResolvedValue([2304, 1344]);
+    render(<PetWindow />);
+    await waitFor(() =>
+      expect(mocks.clampPetRestorePosition).toHaveBeenCalledWith(120, 240, 160),
+    );
+    await waitFor(() =>
+      expect(mocks.setPetWebviewPosition).toHaveBeenCalledWith(2304, 1344),
+    );
+  });
+
+  it("clamps the glide inside the display the pet is gliding on", async () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal(
+      "requestAnimationFrame",
+      vi.fn((callback: FrameRequestCallback) => {
+        frames.push(callback);
+        return frames.length;
+      }),
+    );
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    // A wide display that the browser-side window.screen fallback does not
+    // know about: without the bounds the pet would stop at 864 (1024 - 160).
+    mocks.petScreenBounds.mockResolvedValue([[0, 0, 2000, 1600]]);
+    vi.spyOn(performance, "now")
+      .mockReturnValueOnce(0)
+      .mockReturnValueOnce(50)
+      .mockReturnValue(50);
+    mocks.onPetWebviewMoved.mockImplementation(async () => vi.fn());
+    mocks.petSupportsManualMotion.mockReturnValue(true);
+    render(<PetWindow />);
+    await waitFor(() =>
+      expect(mocks.setPetWebviewPosition).toHaveBeenCalledWith(120, 240),
+    );
+
+    const region = screen.getByTestId("pet-drag-region");
+    fireEvent.pointerDown(region, {
+      clientX: 0,
+      clientY: 12,
+      pointerId: 1,
+      button: 0,
+    });
+    fireEvent.pointerMove(region, {
+      clientX: 900,
+      clientY: 12,
+      pointerId: 1,
+    });
+    fireEvent.pointerUp(region, { pointerId: 1 });
+
+    expect(frames).toHaveLength(1);
+    act(() => frames.shift()?.(66));
+    const lastCall = mocks.setPetWebviewPosition.mock.calls.at(-1);
+    expect(lastCall?.[0]).toBeGreaterThan(864);
+    expect(lastCall?.[1]).toBe(240);
   });
 
   it("resizes from the bottom-right hover handle and persists the size", async () => {

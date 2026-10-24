@@ -11,7 +11,6 @@ import {
   onPetWebviewMoved,
   petSupportsManualMotion,
   setPetWebviewLogicalSize,
-  setPetWebviewLogicalPosition,
   setPetWebviewPosition,
   startPetWebviewDrag,
 } from "../lib/tauriWebviewApi";
@@ -38,6 +37,15 @@ function clampPetSize(size: number) {
   return Math.min(MAX_PET_SIZE, Math.max(MIN_PET_SIZE, Math.round(size)));
 }
 
+/**
+ * Pet coordinates are physical pixels everywhere: `onMoved` reports them and
+ * the config stores them. Pointer events are CSS (logical) pixels, so the drag
+ * math must scale by the device pixel ratio before doing arithmetic.
+ */
+function petScale(): number {
+  return window.devicePixelRatio || 1;
+}
+
 export default function PetWindow() {
   const [mascotId, setMascotId] = useState<MascotId>(
     DEFAULT_APP_CONFIG.mascotId,
@@ -45,7 +53,7 @@ export default function PetWindow() {
   const configRef = useRef<AppConfig>(DEFAULT_APP_CONFIG);
   const pointerDownRef = useRef(false);
   const pointerStartRef = useRef({ x: 0, y: 0 });
-  const grabOffsetRef = useRef({ x: 0, y: 0 });
+  const lastPointerClientRef = useRef({ x: 0, y: 0 });
   const lastPositionRef = useRef({ x: 0, y: 0 });
   const pointerSamplesRef = useRef<PointerSample[]>([]);
   const glideFrameRef = useRef<number | null>(null);
@@ -59,6 +67,12 @@ export default function PetWindow() {
     null,
   );
   const lastOpenAtRef = useRef(0);
+  const screenBoundsRef = useRef<Array<{
+    left: number;
+    top: number;
+    right: number;
+    bottom: number;
+  }> | null>(null);
 
   useEffect(() => {
     const appWindow = getPetWebviewWindow();
@@ -88,8 +102,32 @@ export default function PetWindow() {
       await setPetWebviewLogicalSize(petSizeRef.current);
 
       if (config.petX !== null && config.petY !== null) {
-        lastPositionRef.current = { x: config.petX, y: config.petY };
-        await setPetWebviewPosition(config.petX, config.petY);
+        let x = config.petX;
+        let y = config.petY;
+        // Heal positions that were saved off-screen (physical pixels) —
+        // the Rust side accepts them only when a monitor still contains them.
+        try {
+          [x, y] = await tauriApi.clampPetRestorePosition(
+            config.petX,
+            config.petY,
+            petSizeRef.current * petScale(),
+          );
+        } catch (error) {
+          console.error("校验宠物位置失败", error);
+        }
+        if (disposed) return;
+        lastPositionRef.current = { x, y };
+        await setPetWebviewPosition(x, y);
+      } else {
+        // Seed the drag origin from the real window so the first drag does
+        // not jump when no position was persisted yet.
+        const origin = await Promise.resolve(appWindow.outerPosition?.()).catch(
+          () => null,
+        );
+        if (disposed) return;
+        if (origin) {
+          lastPositionRef.current = { x: origin.x, y: origin.y };
+        }
       }
       if (disposed) return;
 
@@ -182,10 +220,28 @@ export default function PetWindow() {
     movedSincePointerDownRef.current = false;
     dragStartedRef.current = false;
     pointerStartRef.current = { x: event.clientX, y: event.clientY };
-    grabOffsetRef.current = { x: event.clientX, y: event.clientY };
+    // Measure motion against the window's own CSS viewport and scale by its
+    // current device pixel ratio. Stays correct while the pet is dragged
+    // between mixed-DPI displays; absolute screenX would jump at the seam.
+    lastPointerClientRef.current = { x: event.clientX, y: event.clientY };
+    // Inertia samples track the window origin (physical px) so the glide
+    // reflects how the pet actually moved, not just the pointer.
     pointerSamplesRef.current = [
-      { x: event.screenX, y: event.screenY, time: performance.now() },
+      {
+        x: lastPositionRef.current.x,
+        y: lastPositionRef.current.y,
+        time: performance.now(),
+      },
     ];
+    void tauriApi
+      .petScreenBounds()
+      .then((rects) => {
+        screenBoundsRef.current = rects.map((rect) => {
+          const [x, y, width, height] = rect;
+          return { left: x, top: y, right: x + width, bottom: y + height };
+        });
+      })
+      .catch((error) => console.error("读取显示器边界失败", error));
     if (petSupportsManualMotion() && event.currentTarget.setPointerCapture) {
       event.currentTarget.setPointerCapture(event.pointerId);
     }
@@ -203,19 +259,27 @@ export default function PetWindow() {
     movedSincePointerDownRef.current = true;
     if (petSupportsManualMotion()) {
       dragStartedRef.current = true;
+      // Accumulate the origin incrementally so each event is scaled by the
+      // ratio of the screen the pet is currently on.
+      const scale = petScale();
       const position = {
-        x: event.screenX - grabOffsetRef.current.x,
-        y: event.screenY - grabOffsetRef.current.y,
+        x:
+          lastPositionRef.current.x +
+          (event.clientX - lastPointerClientRef.current.x) * scale,
+        y:
+          lastPositionRef.current.y +
+          (event.clientY - lastPointerClientRef.current.y) * scale,
       };
+      lastPointerClientRef.current = { x: event.clientX, y: event.clientY };
       lastPositionRef.current = position;
       const now = performance.now();
       pointerSamplesRef.current = [
         ...pointerSamplesRef.current.filter(
           (sample) => now - sample.time <= 100,
         ),
-        { x: event.screenX, y: event.screenY, time: now },
+        { x: position.x, y: position.y, time: now },
       ].slice(-6);
-      void setPetWebviewLogicalPosition(position.x, position.y);
+      void setPetWebviewPosition(position.x, position.y);
       return;
     }
     if (dragStartedRef.current) return;
@@ -231,12 +295,16 @@ export default function PetWindow() {
     const elapsed = Math.max(1, last.time - first.time);
     let vx = (last.x - first.x) / elapsed;
     let vy = (last.y - first.y) / elapsed;
+    // Samples are physical pixels, so the speed limits must scale too.
+    const scale = petScale();
+    const stopSpeed = GLIDE_STOP_SPEED * scale;
+    const maxSpeed = GLIDE_MAX_SPEED * scale;
     const speed = Math.hypot(vx, vy);
-    if (speed < GLIDE_STOP_SPEED) return;
-    if (speed > GLIDE_MAX_SPEED) {
-      const scale = GLIDE_MAX_SPEED / speed;
-      vx *= scale;
-      vy *= scale;
+    if (speed < stopSpeed) return;
+    if (speed > maxSpeed) {
+      const scaleDown = maxSpeed / speed;
+      vx *= scaleDown;
+      vy *= scaleDown;
     }
 
     let previousTime = performance.now();
@@ -253,36 +321,47 @@ export default function PetWindow() {
         x: lastPositionRef.current.x + vx * elapsedMs,
         y: lastPositionRef.current.y + vy * elapsedMs,
       };
-      const desktop = window.screen as Screen & {
-        availLeft?: number;
-        availTop?: number;
-      };
-      const left = desktop.availLeft ?? 0;
-      const top = desktop.availTop ?? 0;
-      const right = left + desktop.availWidth;
-      const bottom = top + desktop.availHeight;
-      const size = petSizeRef.current;
-      // Avoid teleporting a pet on a secondary monitor when the browser only
-      // exposes the primary screen. Clamp only when the current point is in it.
+      const size = petSizeRef.current * scale;
+      // Keep the glide inside the display the pet is currently on; a fast
+      // flick must not park it invisible in the gap between monitors.
       const current = lastPositionRef.current;
-      if (
-        current.x + size > left &&
-        current.x < right &&
-        current.y + size > top &&
-        current.y < bottom
-      ) {
+      let bounds = screenBoundsRef.current;
+      if (!bounds || bounds.length === 0) {
+        const desktop = window.screen as Screen & {
+          availLeft?: number;
+          availTop?: number;
+        };
+        bounds = [
+          {
+            left: (desktop.availLeft ?? 0) * scale,
+            top: (desktop.availTop ?? 0) * scale,
+            right:
+              (desktop.availLeft ?? 0) * scale + desktop.availWidth * scale,
+            bottom:
+              (desktop.availTop ?? 0) * scale + desktop.availHeight * scale,
+          },
+        ];
+      }
+      const host = bounds.find(
+        (boundsOf) =>
+          current.x >= boundsOf.left &&
+          current.x < boundsOf.right &&
+          current.y >= boundsOf.top &&
+          current.y < boundsOf.bottom,
+      );
+      if (host) {
         const clamped = {
-          x: Math.min(right - size, Math.max(left, position.x)),
-          y: Math.min(bottom - size, Math.max(top, position.y)),
+          x: Math.min(host.right - size, Math.max(host.left, position.x)),
+          y: Math.min(host.bottom - size, Math.max(host.top, position.y)),
         };
         if (clamped.x !== position.x) vx = 0;
         if (clamped.y !== position.y) vy = 0;
         position = clamped;
       }
       lastPositionRef.current = position;
-      void setPetWebviewLogicalPosition(position.x, position.y);
+      void setPetWebviewPosition(position.x, position.y);
 
-      if (Math.hypot(vx, vy) > GLIDE_STOP_SPEED) {
+      if (Math.hypot(vx, vy) > GLIDE_STOP_SPEED * petScale()) {
         glideFrameRef.current = requestAnimationFrame(step);
       } else {
         glideFrameRef.current = null;
