@@ -849,8 +849,14 @@ fn place_chat_near_pet(app: &AppHandle, chat: &WebviewWindow) -> Result<(), Stri
         .map_err(|error| format!("failed to read chat size: {error}"))?;
     let monitor = pet
         .current_monitor()
-        .map_err(|error| format!("failed to find pet monitor: {error}"))?
-        .ok_or_else(|| "pet window is not on an available monitor".to_string())?;
+        .ok()
+        .flatten()
+        // The pet can sit outside any screen when its persisted position went
+        // stale (NSWindow.screen is nil then). Fall back so the chat window
+        // still opens instead of failing the whole command before show().
+        .or_else(|| app.primary_monitor().ok().flatten())
+        .or_else(|| chat.current_monitor().ok().flatten())
+        .ok_or_else(|| "no monitor available to place the chat window".to_string())?;
     let work_area = monitor.work_area();
     let (x, y) = chat_position(
         (pet_position.x, pet_position.y),
@@ -998,9 +1004,10 @@ pub const PET_FALLBACK_INSET: i32 = 96;
 pub type PhysicalDisplayRect = ((i32, i32), (u32, u32));
 
 /// Decide where to place the pet when its persisted (physical) origin may be
-/// stale. Coordinates that still fall inside a connected display are kept;
-/// anything else is replaced with a visible bottom-right slot on the primary
-/// display. Pure so the geometry can be unit tested without an AppHandle.
+/// stale. Coordinates that leave at least half of the pet on a connected
+/// display are kept; anything else is replaced with a visible bottom-right
+/// slot on the primary display. Pure so the geometry can be unit tested
+/// without an AppHandle.
 pub fn pet_restore_position(
     stored: (i32, i32),
     size: i32,
@@ -1012,7 +1019,12 @@ pub fn pet_restore_position(
     for &((origin_x, origin_y), (width, height)) in monitors {
         let right = origin_x.saturating_add(width as i32);
         let bottom = origin_y.saturating_add(height as i32);
-        if x >= origin_x && y >= origin_y && x < right && y < bottom {
+        let half = size / 2;
+        if x >= origin_x
+            && y >= origin_y
+            && x.saturating_add(half) <= right
+            && y.saturating_add(half) <= bottom
+        {
             return stored;
         }
     }

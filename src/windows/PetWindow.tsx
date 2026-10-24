@@ -53,7 +53,7 @@ export default function PetWindow() {
   const configRef = useRef<AppConfig>(DEFAULT_APP_CONFIG);
   const pointerDownRef = useRef(false);
   const pointerStartRef = useRef({ x: 0, y: 0 });
-  const lastPointerClientRef = useRef({ x: 0, y: 0 });
+  const grabOffsetRef = useRef({ x: 0, y: 0 });
   const lastPositionRef = useRef({ x: 0, y: 0 });
   const pointerSamplesRef = useRef<PointerSample[]>([]);
   const glideFrameRef = useRef<number | null>(null);
@@ -220,16 +220,18 @@ export default function PetWindow() {
     movedSincePointerDownRef.current = false;
     dragStartedRef.current = false;
     pointerStartRef.current = { x: event.clientX, y: event.clientY };
-    // Measure motion against the window's own CSS viewport and scale by its
-    // current device pixel ratio. Stays correct while the pet is dragged
-    // between mixed-DPI displays; absolute screenX would jump at the seam.
-    lastPointerClientRef.current = { x: event.clientX, y: event.clientY };
-    // Inertia samples track the window origin (physical px) so the glide
-    // reflects how the pet actually moved, not just the pointer.
+    // Grab offset between the pointer's screen position and the window origin,
+    // both physical pixels. Recomputed per event from screenX so the drag
+    // never accumulates error against the async onMoved reports.
+    const scale = petScale();
+    grabOffsetRef.current = {
+      x: event.screenX * scale - lastPositionRef.current.x,
+      y: event.screenY * scale - lastPositionRef.current.y,
+    };
     pointerSamplesRef.current = [
       {
-        x: lastPositionRef.current.x,
-        y: lastPositionRef.current.y,
+        x: event.screenX * scale,
+        y: event.screenY * scale,
         time: performance.now(),
       },
     ];
@@ -259,25 +261,24 @@ export default function PetWindow() {
     movedSincePointerDownRef.current = true;
     if (petSupportsManualMotion()) {
       dragStartedRef.current = true;
-      // Accumulate the origin incrementally so each event is scaled by the
-      // ratio of the screen the pet is currently on.
+      // Absolute target derived from the pointer's live screen position, so
+      // lagging onMoved reports cannot feed back into the drag.
       const scale = petScale();
       const position = {
-        x:
-          lastPositionRef.current.x +
-          (event.clientX - lastPointerClientRef.current.x) * scale,
-        y:
-          lastPositionRef.current.y +
-          (event.clientY - lastPointerClientRef.current.y) * scale,
+        x: event.screenX * scale - grabOffsetRef.current.x,
+        y: event.screenY * scale - grabOffsetRef.current.y,
       };
-      lastPointerClientRef.current = { x: event.clientX, y: event.clientY };
       lastPositionRef.current = position;
       const now = performance.now();
       pointerSamplesRef.current = [
         ...pointerSamplesRef.current.filter(
           (sample) => now - sample.time <= 100,
         ),
-        { x: position.x, y: position.y, time: now },
+        {
+          x: event.screenX * scale,
+          y: event.screenY * scale,
+          time: now,
+        },
       ].slice(-6);
       void setPetWebviewPosition(position.x, position.y);
       return;

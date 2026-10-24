@@ -19,8 +19,11 @@ export function petUsesManualDrag(): boolean {
   return /Windows/i.test(navigator.userAgent);
 }
 
+// Manual motion is a Windows-only workaround. On macOS the JS drag loop fights
+// the async `onMoved` reports (flicker) and pointer capture can swallow input,
+// so macOS uses the native drag loop instead.
 export function petSupportsManualMotion(): boolean {
-  return /Windows|Macintosh|Mac OS X/i.test(navigator.userAgent);
+  return petUsesManualDrag();
 }
 
 export async function clearPetWebviewChrome(

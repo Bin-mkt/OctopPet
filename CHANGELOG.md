@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] - 2026-10-24
+
+### Fixed
+
+- macOS: dragging the pet no longer flickers — manual JS motion is now reserved for Windows (whose startDragging shows a white HWND); macOS uses the native drag loop, and the Windows manual drag derives each position from the pointer's absolute screen coordinates instead of accumulating deltas against lagging move events
+- macOS: the chat window can always be opened again — `show_chat_near_pet` used to fail outright when the pet sat where no monitor reports ownership (the whole command aborted before `show()` ran); it now falls back to the primary screen
+- A persisted pet position that leaves the pet mostly off-screen (e.g. a corner sliver) is healed on startup to a visible corner instead of being restored as-is
+
 ## [0.2.1] - 2026-10-24
 
 ### Fixed

@@ -271,12 +271,16 @@ describe("PetWindow", () => {
     fireEvent.pointerDown(region, {
       clientX: 0,
       clientY: 12,
+      screenX: 0,
+      screenY: 12,
       pointerId: 1,
       button: 0,
     });
     fireEvent.pointerMove(region, {
       clientX: 900,
       clientY: 12,
+      screenX: 900,
+      screenY: 12,
       pointerId: 1,
     });
     fireEvent.pointerUp(region, { pointerId: 1 });

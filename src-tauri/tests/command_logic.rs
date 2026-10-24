@@ -322,17 +322,25 @@ fn pet_restore_position_keeps_on_screen_coordinates() {
         pet_restore_position((100, 200), 160, &monitors, None),
         (100, 200)
     );
-    // Boundary counts as visible: the pet's origin is inside the display.
+    // Half of the pet must stay onscreen: 2380 + 80 = 2460 <= 2560.
     assert_eq!(
-        pet_restore_position((2559, 1599), 160, &monitors, None),
-        (2559, 1599)
+        pet_restore_position((2380, 1500), 160, &monitors, None),
+        (2380, 1500)
     );
 }
 
 #[test]
-fn pet_restore_position_rescues_off_screen_coordinates() {
+fn pet_restore_position_rejects_mostly_off_screen_coordinates() {
     let monitors = vec![((0, 0), (2560u32, 1600u32))];
     let primary = Some(((0, 0), (2560u32, 1600u32)));
+    // A corner sliver is not a usable pet position.
+    assert_eq!(
+        pet_restore_position((2559, 1599), 160, &monitors, primary),
+        (
+            2560 - 160 - PET_FALLBACK_INSET,
+            1600 - 160 - PET_FALLBACK_INSET
+        )
+    );
     // (4546, 1348) is the real-world corrupted value from the mixed-unit bug.
     assert_eq!(
         pet_restore_position((4546, 1348), 160, &monitors, primary),

@@ -49,7 +49,8 @@ describe("petUsesManualDrag", () => {
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15",
     });
     expect(petUsesManualDrag()).toBe(false);
-    expect(petSupportsManualMotion()).toBe(true);
+    // Manual motion is a Windows-only workaround; macOS uses start_dragging.
+    expect(petSupportsManualMotion()).toBe(false);
   });
 });
 
