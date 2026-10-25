@@ -2653,8 +2653,9 @@ dependencies = [
 
 [[package]]
 name = "octop-pet"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
+ "base64 0.22.1",
  "keyring",
  "objc2",
  "objc2-app-kit",
@@ -2665,6 +2666,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
+ "tauri-plugin-fs",
  "tauri-plugin-global-shortcut",
  "tauri-plugin-http",
  "tauri-plugin-opener",

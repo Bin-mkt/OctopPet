@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.5] - 2026-10-24
+
+### Added
+
+- Chat conversations now receive files from the agent. `attachment` frames
+  (`send_file` / screenshots / generated media) are no longer dropped: images
+  preview inline, videos play inline, and every file gets a download card
+  that saves through the system save dialog with the token intact
+- History reloads keep both sides' attachments: the user's uploaded files
+  (`inbound_attachments`) and the agent's produced files (tool artifacts)
+  render as cards again instead of vanishing
+- Files the user attaches to a message show as cards in their own bubble
+
 ## [0.2.4] - 2026-10-24
 
 ### Fixed

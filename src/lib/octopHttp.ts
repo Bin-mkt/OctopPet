@@ -251,3 +251,33 @@ export function extractTextContent(content: unknown): string {
   }
   return "";
 }
+
+/**
+ * Fetch an attachment (workspace download / media preview) with the Bearer
+ * token the API endpoints require. Runs through the Tauri HTTP plugin on the
+ * desktop build, so the cross-origin restriction never applies.
+ */
+export async function fetchAttachmentBlob(
+  baseUrl: string,
+  token: string,
+  url: string,
+): Promise<Blob> {
+  const root = normalizeBaseUrl(baseUrl);
+  const absolute =
+    /^https?:\/\//i.test(url) || url.startsWith("data:")
+      ? url
+      : `${root}${url.startsWith("/") ? "" : "/"}${url}`;
+  const res = await clientFetch(absolute, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new OctopHttpError(res.status, body);
+  }
+  return res.blob();
+}
+
+/** Workspace download endpoint path for an agent file. */
+export function workspaceDownloadPath(agentId: string, path: string): string {
+  return `/api/agents/${encodeURIComponent(agentId)}/workspace/download?path=${encodeURIComponent(path)}`;
+}

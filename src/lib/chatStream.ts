@@ -44,16 +44,59 @@ export function buildCancelPayload(threadId: string): Record<string, unknown> {
   return { type: "cancel", thread_id: threadId };
 }
 
+/** Attachment pushed by the agent mid-stream (send_file / screenshots / …). */
+export type StreamAttachment = {
+  kind: "image" | "file";
+  /** Always non-empty: frames without any URL are not surfaced. */
+  url: string;
+  filename: string;
+  mediaType?: string;
+};
+
 export function applyStreamChunk(
   prevAssistantText: string,
   chunk: unknown,
-): { text: string; done: boolean; error?: string } {
+): {
+  text: string;
+  done: boolean;
+  error?: string;
+  attachments?: StreamAttachment[];
+} {
   if (!chunk || typeof chunk !== "object") {
     return { text: prevAssistantText, done: false };
   }
-  const c = chunk as { type?: string; content?: string; message?: string };
+  const c = chunk as {
+    type?: string;
+    content?: string;
+    message?: string;
+    kind?: string;
+    url?: string;
+    preview_url?: string;
+    filename?: string;
+    mime_type?: string;
+    data?: string;
+  };
   if (c.type === "token" && typeof c.content === "string") {
     return { text: prevAssistantText + c.content, done: false };
+  }
+  if (c.type === "attachment") {
+    const url = c.preview_url || c.url || "";
+    const mime = c.mime_type || "application/octet-stream";
+    const displayUrl = url || (c.data ? `data:${mime};base64,${c.data}` : "");
+    if (!displayUrl) return { text: prevAssistantText, done: false };
+    return {
+      text: prevAssistantText,
+      done: false,
+      attachments: [
+        {
+          kind:
+            c.kind === "image" || mime.startsWith("image/") ? "image" : "file",
+          url: displayUrl,
+          filename: c.filename || "attachment",
+          mediaType: mime,
+        },
+      ],
+    };
   }
   if (c.type === "done") return { text: prevAssistantText, done: true };
   if (c.type === "error") {

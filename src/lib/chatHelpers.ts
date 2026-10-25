@@ -1,5 +1,9 @@
-import { OctopHttpError, extractTextContent } from "./octopHttp";
-import type { ChatMessage } from "./types";
+import {
+  OctopHttpError,
+  extractTextContent,
+  workspaceDownloadPath,
+} from "./octopHttp";
+import type { ChatMessage, ChatMessageAttachment } from "./types";
 
 export const CHAT_WIDTH = 400;
 export const CHAT_INITIAL_HEIGHT = 400;
@@ -89,19 +93,45 @@ export function nextChatMessageId(prefix: string): string {
 
 export function historyMessages(
   rows: Array<{ role: string; content: unknown }>,
+  agentId?: string,
 ): ChatMessage[] {
-  return rows.flatMap((row) => {
+  const messages: ChatMessage[] = [];
+  for (const row of rows) {
     if (
       row.role !== "user" &&
       row.role !== "assistant" &&
       row.role !== "system"
     ) {
-      return [];
+      // Tool rows carry the artifacts agent-produced files live in; fold
+      // their attachments into the surrounding assistant bubble.
+      if (row.role === "tool") {
+        const attachments = attachmentsFromToolContent(row.content, agentId);
+        if (attachments.length === 0) continue;
+        const last = messages[messages.length - 1];
+        if (last && last.role === "assistant") {
+          last.attachments = mergeAttachments(last.attachments, attachments);
+          continue;
+        }
+        messages.push({
+          id: nextChatMessageId("history"),
+          role: "assistant",
+          content: "",
+          attachments,
+        });
+      }
+      continue;
     }
     const content = extractTextContent(row.content);
-    if (!content) return [];
-    return [{ id: nextChatMessageId("history"), role: row.role, content }];
-  });
+    const attachments = attachmentsFromInbound(row);
+    if (!content && attachments.length === 0) continue;
+    messages.push({
+      id: nextChatMessageId("history"),
+      role: row.role,
+      content,
+      ...(attachments.length > 0 ? { attachments } : {}),
+    });
+  }
+  return messages;
 }
 
 export function chatErrorText(error: unknown): string {
@@ -113,4 +143,116 @@ export function chatErrorText(error: unknown): string {
     return `服务请求失败（${error.status}）`;
   }
   return error instanceof Error ? error.message : "连接服务失败";
+}
+
+/** Classify an attachment for rendering: inline preview vs. download card. */
+export function attachmentKind(
+  mediaType?: string,
+  filename?: string,
+): ChatMessageAttachment["kind"] {
+  const mime = (mediaType || "").toLowerCase();
+  if (mime.startsWith("image/")) return "image";
+  if (mime.startsWith("video/")) return "video";
+  if (!mime && filename) {
+    if (/\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(filename)) return "image";
+    if (/\.(mp4|mov|mkv|webm|avi|m4v)$/i.test(filename)) return "video";
+  }
+  return "file";
+}
+
+function basename(path: string): string {
+  const posix = path.replace(/\\/g, "/").split("/").filter(Boolean);
+  return posix[posix.length - 1] || path;
+}
+
+function urlFor(row: Record<string, unknown>): string {
+  return String(
+    row.access_url || row.url || row.workspace_path || row.path || "",
+  );
+}
+
+/** Attachments the user uploaded, echoed back in persisted history. */
+export function attachmentsFromInbound(
+  row: Record<string, unknown>,
+): ChatMessageAttachment[] {
+  if (!Array.isArray(row.inbound_attachments)) return [];
+  const attachments: ChatMessageAttachment[] = [];
+  for (const raw of row.inbound_attachments) {
+    if (!raw || typeof raw !== "object") continue;
+    const item = raw as Record<string, unknown>;
+    const url = urlFor(item);
+    const filename = String(item.filename || basename(url) || "附件");
+    const mediaType = String(item.media_type || "");
+    if (!url) continue;
+    attachments.push({
+      kind: attachmentKind(mediaType, filename),
+      url,
+      filename,
+      ...(mediaType ? { mediaType } : {}),
+    });
+  }
+  return attachments;
+}
+
+/** Media blocks produced by agent tools (send_file / screenshot / …). */
+export function attachmentsFromToolContent(
+  content: unknown,
+  agentId?: string,
+): ChatMessageAttachment[] {
+  if (!Array.isArray(content)) return [];
+  const attachments: ChatMessageAttachment[] = [];
+  for (const block of content) {
+    if (!block || typeof block !== "object") continue;
+    const result = block as Record<string, unknown>;
+    if (result.type !== "tool_result") continue;
+    const artifact = result.artifact;
+    if (!artifact || typeof artifact !== "object") continue;
+    const media = artifact as Record<string, unknown>;
+    const path = String(media.path || "");
+    const mediaType = String(
+      (media.source as Record<string, unknown> | undefined)?.media_type ||
+        media.media_type ||
+        "",
+    );
+    const filename = String(media.filename || basename(path) || "附件");
+    let url = String(media.url || "");
+    if (!url && path && agentId) {
+      url = workspaceDownloadPath(agentId, path);
+    }
+    if (!url) continue;
+    attachments.push({
+      kind: attachmentKind(mediaType, filename),
+      url,
+      filename,
+      ...(mediaType ? { mediaType } : {}),
+    });
+  }
+  return attachments;
+}
+
+/** Append attachments without duplicating ones already on the message. */
+export function mergeAttachments(
+  existing: ChatMessageAttachment[] | undefined,
+  additions: ChatMessageAttachment[],
+): ChatMessageAttachment[] {
+  const seen = new Set((existing ?? []).map((a) => `${a.kind}:${a.url}`));
+  const merged = [...(existing ?? [])];
+  for (const attachment of additions) {
+    const key = `${attachment.kind}:${attachment.url}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(attachment);
+  }
+  return merged;
+}
+
+/** Chunked base64 for IPC — `btoa(...spread)` overflows on big buffers. */
+export function bytesToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
 }

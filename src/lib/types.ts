@@ -29,4 +29,15 @@ export interface ChatMessage {
   content: string;
   pending?: boolean;
   error?: string;
+  attachments?: ChatMessageAttachment[];
+}
+
+/** A file pushed by the agent (or attached by the user) in a conversation. */
+export interface ChatMessageAttachment {
+  /** Image/video attachments render inline, everything else becomes a card. */
+  kind: "image" | "video" | "file";
+  /** Absolute URL — workspace download endpoints use the Bearer token. */
+  url: string;
+  filename: string;
+  mediaType?: string;
 }

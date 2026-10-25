@@ -915,3 +915,77 @@ html[data-window-label="chat"] *::-webkit-scrollbar-button {
   margin: 0;
   color: #aeaeb2;
 }
+
+.message-attachments {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+}
+
+.message-attachment {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.message-attachment-image {
+  width: 100%;
+  max-width: 220px;
+  border-radius: 8px;
+  object-fit: contain;
+}
+
+.message-attachment-video {
+  width: 100%;
+  max-width: 260px;
+  max-height: 240px;
+  border-radius: 8px;
+  background: #000;
+}
+
+.message-attachment-file {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 0.32rem 0.55rem;
+  border: 1px solid #38383a;
+  border-radius: 8px;
+  background: #2c2c2e;
+}
+
+.message-attachment-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.76rem;
+  color: #e5e5ea;
+}
+
+.message-attachment-download {
+  flex: none;
+  appearance: none;
+  border: 1px solid #48484a;
+  border-radius: 6px;
+  padding: 0.15rem 0.55rem;
+  background: #3a3a3c;
+  color: #f5f5f7;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.message-attachment-download:hover:not(:disabled) {
+  background: #48484a;
+}
+
+.message-attachment-download:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.message-attachment-error {
+  color: #ff8a80;
+  font-size: 0.7rem;
+}

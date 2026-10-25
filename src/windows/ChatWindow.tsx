@@ -62,6 +62,7 @@ export default function ChatWindow() {
           actionsDisabled={chat.connection === "streaming"}
           speakingId={chat.speakingId}
           statusLabel={chat.statusLabel}
+          attachmentContext={chat.attachmentContext}
           onRetry={chat.retryAssistant}
           onSpeak={chat.speakMessage}
         />

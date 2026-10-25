@@ -24,6 +24,9 @@ export const tauriApi = {
   // Physical rects [x, y, width, height] of every connected display.
   petScreenBounds: () =>
     invoke<Array<[number, number, number, number]>>("pet_screen_bounds"),
+  // Save base64-encoded bytes through a system save dialog.
+  saveAttachment: (data: string, filename: string) =>
+    invoke<void>("save_attachment", { data, filename }),
   showSettings: () => invoke<void>("show_settings"),
   placeWindowBottomCenter: (label: string) =>
     invoke<void>("place_window_bottom_center", { label }),

@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 
 import logoUrl from "../assets/logo.svg";
-import type { ChatMessage } from "../lib/types";
 import AssistantMarkdown from "./AssistantMarkdown";
 import GeneratingIndicator from "./GeneratingIndicator";
+import MessageAttachments, {
+  type AttachmentContext,
+} from "./MessageAttachments";
+import type { ChatMessage } from "../lib/types";
 
 async function copyText(text: string): Promise<boolean> {
   if (!text) return false;
@@ -165,6 +168,7 @@ export default function MessageList({
   actionsDisabled = false,
   speakingId = null,
   statusLabel = null,
+  attachmentContext = null,
   onRetry,
   onSpeak,
 }: {
@@ -173,6 +177,7 @@ export default function MessageList({
   actionsDisabled?: boolean;
   speakingId?: string | null;
   statusLabel?: string | null;
+  attachmentContext?: AttachmentContext | null;
   onRetry?: (messageId: string) => void;
   onSpeak?: (messageId: string, text: string) => void;
 }) {
@@ -228,6 +233,12 @@ export default function MessageList({
               ) : (
                 <p>{message.content}</p>
               )}
+              {message.attachments && message.attachments.length > 0 ? (
+                <MessageAttachments
+                  attachments={message.attachments}
+                  context={attachmentContext}
+                />
+              ) : null}
               {message.error ? (
                 <small className="message-error">{message.error}</small>
               ) : null}

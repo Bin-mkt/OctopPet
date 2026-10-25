@@ -99,3 +99,66 @@ describe("chatStream", () => {
     });
   });
 });
+
+describe("applyStreamChunk attachments", () => {
+  it("surfaces attachment frames from the agent", () => {
+    const r = applyStreamChunk("hi", {
+      type: "attachment",
+      kind: "file",
+      url: "/api/agents/a1/workspace/download?path=outbound/report.pdf",
+      preview_url: "/api/agents/a1/workspace/download?path=outbound/report.pdf",
+      filename: "报告.pdf",
+      mime_type: "application/pdf",
+    });
+    expect(r.attachments).toEqual([
+      {
+        kind: "file",
+        url: "/api/agents/a1/workspace/download?path=outbound/report.pdf",
+        filename: "报告.pdf",
+        mediaType: "application/pdf",
+      },
+    ]);
+    expect(r.done).toBe(false);
+    expect(r.text).toBe("hi");
+  });
+
+  it("classifies image attachments by kind and mime", () => {
+    const image = applyStreamChunk("", {
+      type: "attachment",
+      kind: "image",
+      url: "/api/agents/a1/media/preview?source=shot.png",
+      filename: "shot.png",
+      mime_type: "image/png",
+    });
+    expect(image.attachments?.[0].kind).toBe("image");
+
+    const fromMime = applyStreamChunk("", {
+      type: "attachment",
+      kind: "file",
+      url: "https://h.example/a.jpg",
+      filename: "a.jpg",
+      mime_type: "image/jpeg",
+    });
+    expect(fromMime.attachments?.[0].kind).toBe("image");
+  });
+
+  it("falls back to inline base64 data urls", () => {
+    const r = applyStreamChunk("", {
+      type: "attachment",
+      kind: "file",
+      filename: "slide.pptx",
+      mime_type:
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      data: "UEsDBA==",
+    });
+    expect(r.attachments?.[0].url).toBe(
+      "data:application/vnd.openxmlformats-officedocument.presentationml.presentation;base64,UEsDBA==",
+    );
+  });
+
+  it("drops attachment frames without any payload", () => {
+    const r = applyStreamChunk("hi", { type: "attachment", kind: "file" });
+    expect(r.attachments).toBeUndefined();
+    expect(r.text).toBe("hi");
+  });
+});

@@ -23,6 +23,7 @@ import {
   chatErrorText,
   compactWindowHeight,
   historyMessages,
+  mergeAttachments,
   nextChatMessageId,
 } from "../lib/chatHelpers";
 import { resolveThreadForAgent, withThreadForAgent } from "../lib/configLogic";
@@ -34,6 +35,7 @@ import {
 import {
   createThread,
   getHistory,
+  isImageAttachment,
   listAgents,
   listConnectors,
   listResolvedModels,
@@ -265,7 +267,7 @@ export function useChatController() {
 
         configRef.current = nextConfig;
         threadRef.current = { id: threadId, sessionKey };
-        setMessages(historyMessages(rows));
+        setMessages(historyMessages(rows, nextAgentId));
         setConnection("connected");
       } catch (loadError) {
         if (sequence !== loadSequenceRef.current || !mountedRef.current) return;
@@ -555,7 +557,30 @@ export function useChatController() {
           setMessages((current) =>
             current.map((message) =>
               message.id === assistantId
-                ? { ...message, content: assistantText }
+                ? {
+                    ...message,
+                    content: assistantText,
+                    ...(result.attachments && result.attachments.length > 0
+                      ? {
+                          attachments: mergeAttachments(
+                            message.attachments,
+                            result.attachments.map((attachment) => ({
+                              kind:
+                                attachment.kind === "image"
+                                  ? "image"
+                                  : attachment.mediaType?.startsWith("video/")
+                                    ? "video"
+                                    : "file",
+                              url: attachment.url,
+                              filename: attachment.filename,
+                              ...(attachment.mediaType
+                                ? { mediaType: attachment.mediaType }
+                                : {}),
+                            })),
+                          ),
+                        }
+                      : {}),
+                  }
                 : message,
             ),
           );
@@ -585,7 +610,30 @@ export function useChatController() {
       retryTurnsRef.current[assistantId] = { text, options };
       setMessages((current) => [
         ...current,
-        { id: userId, role: "user", content: displayText },
+        {
+          id: userId,
+          role: "user",
+          content: displayText,
+          ...(options.attachments.length > 0
+            ? {
+                attachments: options.attachments.map((attachment) => ({
+                  kind: isImageAttachment(attachment)
+                    ? "image"
+                    : attachment.mediaType.startsWith("video/")
+                      ? "video"
+                      : "file",
+                  url:
+                    attachment.url ||
+                    attachment.workspacePath ||
+                    attachment.filename,
+                  filename: attachment.filename,
+                  ...(attachment.mediaType
+                    ? { mediaType: attachment.mediaType }
+                    : {}),
+                })),
+              }
+            : {}),
+        },
         { id: assistantId, role: "assistant", content: "", pending: true },
       ]);
       startAssistantStream(text, assistantId, options);
@@ -794,6 +842,12 @@ export function useChatController() {
     uploading,
     queue,
     statusLabel,
+    attachmentContext: configRef.current
+      ? {
+          baseUrl: configRef.current.baseUrl,
+          token: tokenRef.current ?? "",
+        }
+      : null,
     threadReady: Boolean(threadRef.current),
     canRetryInit:
       !needsSettings &&
