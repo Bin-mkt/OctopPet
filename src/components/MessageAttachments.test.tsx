@@ -83,7 +83,7 @@ describe("MessageAttachments", () => {
     mocks.fetchAttachmentBlob.mockResolvedValue(
       new FakeBlob("hello") as unknown as Blob,
     );
-    mocks.saveAttachment.mockResolvedValue(undefined);
+    mocks.saveAttachment.mockResolvedValue("/Users/dongyan/Downloads/报告.pdf");
     render(
       <MessageAttachments
         context={context}
@@ -103,6 +103,11 @@ describe("MessageAttachments", () => {
         "aGVsbG8=",
         "报告.pdf",
       ),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByText(/已保存到 \/Users\/dongyan\/Downloads\/报告.pdf/),
+      ).toBeInTheDocument(),
     );
     expect(mocks.fetchAttachmentBlob).toHaveBeenCalledWith(
       "http://octop.local",

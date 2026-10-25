@@ -28,6 +28,8 @@ const mocks = vi.hoisted(() => ({
   deleteSecret: vi.fn(),
   listenAuthUpdated: vi.fn(),
   listenChatShown: vi.fn(),
+  listThreads: vi.fn().mockResolvedValue([]),
+  rebindSession: vi.fn().mockResolvedValue(undefined),
   showSettings: vi.fn(),
   placeWindowBottomCenter: vi.fn(),
   listAgents: vi.fn(),
@@ -77,6 +79,8 @@ vi.mock("../lib/octopHttp", async (importOriginal) => {
     login: mocks.login,
     listResolvedModels: mocks.listResolvedModels,
     listConnectors: mocks.listConnectors,
+    listThreads: mocks.listThreads,
+    rebindSession: mocks.rebindSession,
     uploadAttachment: mocks.uploadAttachment,
   };
 });
@@ -136,6 +140,8 @@ describe("ChatWindow", () => {
     mocks.getSecret.mockImplementation(async (key: string) =>
       key === "access_token" ? "token-1" : null,
     );
+    mocks.listThreads.mockResolvedValue([]);
+    mocks.rebindSession.mockResolvedValue(undefined);
     mocks.patchConfig.mockResolvedValue(undefined);
     mocks.setSecret.mockResolvedValue(undefined);
     mocks.deleteSecret.mockResolvedValue(undefined);
@@ -710,5 +716,66 @@ describe("ChatWindow", () => {
       await screen.findByRole("button", { name: "选择代理" }),
     ).toBeInTheDocument();
     expect(mocks.listAgents).toHaveBeenCalledTimes(2);
+  });
+  it("打开会话列表并切换到旧会话：rebind 后加载该线程历史", async () => {
+    mocks.loadConfig.mockResolvedValue({
+      ...DEFAULT_APP_CONFIG,
+      baseUrl: "https://octop.example",
+      username: "juba",
+      threadIdByAgent: { a1: "current-thread" },
+    });
+    mocks.getHistory
+      .mockResolvedValueOnce({ messages: [] })
+      .mockResolvedValueOnce({
+        messages: [
+          {
+            role: "assistant",
+            content: [{ type: "text", text: "这是旧会话的内容" }],
+          },
+        ],
+      });
+    // listThreads is mocked post-mapping (controller-facing shape).
+    mocks.listThreads.mockResolvedValue([
+      {
+        threadId: "current-thread",
+        title: "当前会话",
+        lastActive: 1761000000,
+        isActive: true,
+        hasMessages: true,
+      },
+      {
+        threadId: "old-thread",
+        title: "旧会话",
+        lastActive: 1760000000,
+        isActive: false,
+        hasMessages: true,
+      },
+    ]);
+
+    render(<ChatWindow />);
+    await screen.findByRole("button", { name: "会话列表" });
+
+    fireEvent.click(screen.getByRole("button", { name: "会话列表" }));
+    await screen.findByText("旧会话");
+    fireEvent.click(screen.getByText("旧会话"));
+
+    await waitFor(() =>
+      expect(mocks.rebindSession).toHaveBeenCalledWith(
+        "https://octop.example",
+        "token-1",
+        "a1",
+        "old-thread",
+      ),
+    );
+    await waitFor(() =>
+      expect(mocks.getHistory).toHaveBeenCalledWith(
+        "https://octop.example",
+        "token-1",
+        "a1",
+        "old-thread",
+      ),
+    );
+    await screen.findByText("这是旧会话的内容");
+    expect(screen.queryByText("旧会话")).toBeInTheDocument(); // 面板已关
   });
 });

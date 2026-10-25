@@ -3,14 +3,40 @@ import { windowCloseSide } from "../lib/platform";
 import WindowCloseButton from "./WindowCloseButton";
 
 export default function ChatChrome({
+  sessionTitle = "",
+  onToggleSessions,
+  sessionsOpen = false,
   onNewSession,
   newSessionDisabled,
 }: {
+  sessionTitle?: string;
+  onToggleSessions?: () => void;
+  sessionsOpen?: boolean;
   onNewSession?: () => void;
   newSessionDisabled?: boolean;
 }) {
   const closeSide = windowCloseSide();
   const close = <WindowCloseButton />;
+  const toggle = onToggleSessions ? (
+    <button
+      type="button"
+      className={`chat-sessions-toggle${sessionsOpen ? " is-active" : ""}`}
+      aria-label="会话列表"
+      title="会话列表"
+      aria-expanded={sessionsOpen}
+      onClick={() => onToggleSessions()}
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path
+          d="M4 6h16M4 12h16M4 18h10"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.75"
+          strokeLinecap="round"
+        />
+      </svg>
+    </button>
+  ) : null;
   const newSession = onNewSession ? (
     <button
       type="button"
@@ -35,13 +61,18 @@ export default function ChatChrome({
           stroke="currentColor"
           strokeWidth="1.75"
           strokeLinecap="round"
-          strokeLinejoin="round"
         />
       </svg>
     </button>
   ) : (
     <span className="chat-chrome-spacer" />
   );
+
+  const title = sessionTitle ? (
+    <span className="chat-chrome-title" title={sessionTitle}>
+      {sessionTitle}
+    </span>
+  ) : null;
 
   return (
     <header
@@ -50,7 +81,9 @@ export default function ChatChrome({
       data-tauri-drag-region
     >
       {closeSide === "start" ? close : newSession}
+      {toggle}
       <div className="chat-chrome-drag" data-tauri-drag-region />
+      {title}
       {closeSide === "start" ? newSession : close}
     </header>
   );

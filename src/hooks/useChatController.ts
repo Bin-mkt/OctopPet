@@ -39,8 +39,10 @@ import {
   listAgents,
   listConnectors,
   listResolvedModels,
+  listThreads,
   login,
   OctopHttpError,
+  rebindSession,
   uploadAttachment,
 } from "../lib/octopHttp";
 import type {
@@ -48,6 +50,7 @@ import type {
   ConnectorOption,
   ResolvedModel,
 } from "../lib/octopTypes";
+import type { ChatSessionSummary } from "../lib/octopHttp";
 import {
   applyStreamStatusEvent,
   beginStreamStatus,
@@ -88,6 +91,8 @@ export function useChatController() {
   const [speakingId, setSpeakingId] = useState<string | null>(null);
   const [models, setModels] = useState<ResolvedModel[]>([]);
   const [connectors, setConnectors] = useState<ConnectorOption[]>([]);
+  const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [uploading, setUploading] = useState(false);
   const [queue, setQueue] = useState<QueuedChatItem[]>([]);
@@ -206,6 +211,31 @@ export function useChatController() {
     setConnection(thread ? "connected" : "disconnected");
   }, []);
 
+  // Session list for the switcher panel. Takes the agent id explicitly so its
+  // own identity never churns when the active agent state flips — openAgent /
+  // startNewSession list it in their deps and would otherwise be recreated
+  // between renders, re-running the mount effect's initialization twice.
+  const refreshSessionsFor = useCallback(
+    async (targetAgentId: string) => {
+      const config = configRef.current;
+      if (!config || !targetAgentId) return;
+      try {
+        const rows = await authorized((token) =>
+          listThreads(config.baseUrl, token, targetAgentId),
+        );
+        setSessions(Array.isArray(rows) ? rows : []);
+      } catch {
+        // Session switching is a convenience; never block chat on the list.
+      }
+    },
+    [authorized],
+  );
+  // Used by the panel in ChatWindow; keeps refs to the current agent.
+  const refreshSessions = useCallback(
+    () => refreshSessionsFor(agentId),
+    [agentId, refreshSessionsFor],
+  );
+
   const openAgent = useCallback(
     async (nextAgentId: string) => {
       stopStream();
@@ -267,8 +297,12 @@ export function useChatController() {
 
         configRef.current = nextConfig;
         threadRef.current = { id: threadId, sessionKey };
+        setActiveThreadId(threadId);
         setMessages(historyMessages(rows, nextAgentId));
         setConnection("connected");
+        // The session list drives the switch UI; keep it fresh after each
+        // thread activation. Failures here are non-fatal.
+        void refreshSessionsFor(nextAgentId);
       } catch (loadError) {
         if (sequence !== loadSequenceRef.current || !mountedRef.current) return;
         setError(chatErrorText(loadError));
@@ -279,7 +313,7 @@ export function useChatController() {
         }
       }
     },
-    [authorized, stopStream],
+    [authorized, refreshSessionsFor, stopStream],
   );
 
   const startNewSession = useCallback(async () => {
@@ -317,7 +351,9 @@ export function useChatController() {
         id: created.thread_id,
         sessionKey: created.session_key,
       };
+      setActiveThreadId(created.thread_id);
       setConnection("connected");
+      void refreshSessionsFor(currentAgentId);
     } catch (createError) {
       if (sequence !== loadSequenceRef.current || !mountedRef.current) return;
       setError(chatErrorText(createError));
@@ -327,7 +363,51 @@ export function useChatController() {
         setLoadingHistory(false);
       }
     }
-  }, [agentId, authorized, stopStream]);
+  }, [agentId, authorized, refreshSessionsFor, stopStream]);
+  const switchThread = useCallback(
+    async (threadId: string) => {
+      const config = configRef.current;
+      const currentAgentId = agentId;
+      if (!config || !currentAgentId || !threadId.trim()) return;
+      if (threadId === threadRef.current?.id) return;
+
+      stopStream();
+      const sequence = ++loadSequenceRef.current;
+      setMessages([]);
+      setAttachments([]);
+      setQueue([]);
+      setStreamStatus(idleStreamStatus());
+      setError("");
+      setLoadingHistory(true);
+      setConnection("loading");
+      threadRef.current = null;
+      setActiveThreadId(null);
+
+      try {
+        await authorized((token) =>
+          rebindSession(config.baseUrl, token, currentAgentId, threadId),
+        );
+        const nextConfig = withThreadForAgent(config, currentAgentId, threadId);
+        await tauriApi.patchConfig({
+          lastAgentId: nextConfig.lastAgentId,
+          threadIdByAgent: nextConfig.threadIdByAgent,
+        });
+        if (sequence !== loadSequenceRef.current || !mountedRef.current) return;
+        // openAgent reads configRef, so publish the new thread mapping first.
+        configRef.current = nextConfig;
+        await openAgent(currentAgentId);
+      } catch (switchError) {
+        if (sequence !== loadSequenceRef.current || !mountedRef.current) return;
+        setError(chatErrorText(switchError));
+        setConnection("disconnected");
+      } finally {
+        if (sequence === loadSequenceRef.current && mountedRef.current) {
+          setLoadingHistory(false);
+        }
+      }
+    },
+    [agentId, authorized, openAgent, stopStream],
+  );
 
   const initialize = useCallback(async () => {
     const sequence = ++loadSequenceRef.current;
@@ -838,6 +918,8 @@ export function useChatController() {
     speakingId,
     models,
     connectors,
+    sessions,
+    activeThreadId,
     attachments,
     uploading,
     queue,
@@ -857,6 +939,8 @@ export function useChatController() {
     retryInitialize: initialize,
     openAgent,
     startNewSession,
+    switchThread,
+    refreshSessions,
     stopStream,
     sendMessage,
     queueMessage,

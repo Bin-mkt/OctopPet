@@ -281,3 +281,48 @@ export async function fetchAttachmentBlob(
 export function workspaceDownloadPath(agentId: string, path: string): string {
   return `/api/agents/${encodeURIComponent(agentId)}/workspace/download?path=${encodeURIComponent(path)}`;
 }
+
+export interface ChatSessionSummary {
+  threadId: string;
+  title: string;
+  /** Unix seconds — the server reports seconds, the UI multiplies by 1000. */
+  lastActive: number;
+  isActive?: boolean;
+  hasMessages?: boolean;
+  pinned?: boolean;
+}
+
+/** Conversation threads of an agent that the current user can reopen. */
+export async function listThreads(
+  baseUrl: string,
+  token: string,
+  agentId: string,
+): Promise<ChatSessionSummary[]> {
+  const rows = await api<Array<Record<string, unknown>>>(
+    baseUrl,
+    `/agents/${encodeURIComponent(agentId)}/threads?limit=50`,
+    { token },
+  );
+  return (rows ?? []).map((row) => ({
+    threadId: String(row.thread_id ?? ""),
+    title: String(row.title ?? ""),
+    lastActive: Number(row.last_active ?? 0),
+    isActive: Boolean(row.is_active),
+    hasMessages: Boolean(row.has_messages),
+    pinned: Boolean(row.pinned),
+  }));
+}
+
+/** Point this user's session at an existing thread (the switch call). */
+export async function rebindSession(
+  baseUrl: string,
+  token: string,
+  agentId: string,
+  threadId: string,
+): Promise<void> {
+  await api(baseUrl, `/agents/${encodeURIComponent(agentId)}/session`, {
+    method: "PATCH",
+    token,
+    body: JSON.stringify({ thread_id: threadId }),
+  });
+}

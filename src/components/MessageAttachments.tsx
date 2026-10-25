@@ -18,8 +18,7 @@ function failureText(error: unknown): string {
 /**
  * Files pushed into the conversation by the agent (send_file / screenshots /
  * generated media) plus the user's own uploads after a reload. Images and
- * videos preview inline; every attachment can be saved through the system
- * save dialog.
+ * videos preview inline; every attachment saves to the Downloads folder.
  */
 export default function MessageAttachments({
   attachments,
@@ -30,6 +29,7 @@ export default function MessageAttachments({
 }) {
   const [previews, setPreviews] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
+  const [saved, setSaved] = useState<Record<string, string>>({});
   const [failed, setFailed] = useState<Record<string, string>>({});
   const objectUrlsRef = useRef<Map<string, string>>(new Map());
 
@@ -96,6 +96,9 @@ export default function MessageAttachments({
       .then((buffer) =>
         tauriApi.saveAttachment(bytesToBase64(buffer), attachment.filename),
       )
+      .then((savedPath) => {
+        setSaved((current) => ({ ...current, [url]: savedPath }));
+      })
       .catch((error) => {
         setFailed((current) => ({ ...current, [url]: failureText(error) }));
       })
@@ -146,9 +149,18 @@ export default function MessageAttachments({
                 aria-busy={downloading}
                 onClick={() => handleDownload(attachment)}
               >
-                {downloading ? "保存中…" : "下载"}
+                {saved[attachment.url]
+                  ? "已保存"
+                  : downloading
+                    ? "保存中…"
+                    : "下载"}
               </button>
             </div>
+            {saved[attachment.url] ? (
+              <small className="message-attachment-saved">
+                已保存到 {saved[attachment.url]}
+              </small>
+            ) : null}
             {failed[attachment.url] ? (
               <small className="message-attachment-error">
                 {failed[attachment.url]}

@@ -194,38 +194,124 @@ export function attachmentsFromInbound(
   return attachments;
 }
 
-/** Media blocks produced by agent tools (send_file / screenshot / …). */
+/** Pull a preview/download URL plus metadata out of a media-shaped block. */
+function attachmentFromMediaBlock(
+  media: Record<string, unknown>,
+  agentId?: string,
+): ChatMessageAttachment | null {
+  const previewUrl = media.preview_url;
+  if (typeof previewUrl === "string" && previewUrl) {
+    const filename = String(media.filename || "附件");
+    const mediaType = String(media.media_type || media.mime_type || "");
+    return {
+      kind: attachmentKind(mediaType, filename),
+      url: previewUrl,
+      filename,
+      ...(mediaType ? { mediaType } : {}),
+    };
+  }
+  const path = String(media.path || "");
+  const mediaType = String(
+    (media.source as Record<string, unknown> | undefined)?.media_type ||
+      media.media_type ||
+      media.mime_type ||
+      "",
+  );
+  const filename = String(media.filename || basename(path) || "附件");
+  let url = typeof media.url === "string" && media.url ? media.url : "";
+  if (!url && path && agentId) {
+    url = workspaceDownloadPath(agentId, path);
+  }
+  if (!url) return null;
+  return {
+    kind: attachmentKind(mediaType, filename),
+    url,
+    filename,
+    ...(mediaType ? { mediaType } : {}),
+  };
+}
+
+/**
+ * Media blocks produced by agent tools (send_file / screenshot / …).
+ * The server returns them in several shapes: an ``artifact`` object on the
+ * tool_result, the ``output`` itself being the media block (object or JSON
+ * string), a JSON list of content blocks with ``preview_url`` already
+ * resolved by the history enrichment, or a plain-text output rewritten to
+ * embed an API media URL. All of them are accepted here.
+ */
+const API_MEDIA_URL_RE =
+  /\/api\/agents\/[^/]+\/(?:media\/preview|workspace\/download)\?[^)\s"'<>]+/gi;
+
+function attachmentsFromToolOutputText(text: string): ChatMessageAttachment[] {
+  const attachments: ChatMessageAttachment[] = [];
+  for (const raw of text.matchAll(API_MEDIA_URL_RE)) {
+    const url = raw[0];
+    const query = url.split("?")[1] || "";
+    const params = new URLSearchParams(query);
+    const ref = params.get("source") || params.get("path") || "";
+    const filename = basename(decodeURIComponent(ref)) || "附件";
+    const mime = params.get("mime_type") || "";
+    attachments.push({
+      kind: attachmentKind(mime, filename),
+      url,
+      filename,
+      ...(mime ? { mediaType: mime } : {}),
+    });
+  }
+  return attachments;
+}
+
 export function attachmentsFromToolContent(
   content: unknown,
   agentId?: string,
 ): ChatMessageAttachment[] {
   if (!Array.isArray(content)) return [];
   const attachments: ChatMessageAttachment[] = [];
+
+  const collect = (value: unknown): void => {
+    if (!value || typeof value !== "object") return;
+    const media = value as Record<string, unknown>;
+    const mediaType = String(media.type || "");
+    // Tool results only attach meaningful media for these block kinds.
+    if (
+      mediaType !== "" &&
+      mediaType !== "file" &&
+      mediaType !== "image" &&
+      mediaType !== "video" &&
+      mediaType !== "audio"
+    ) {
+      return;
+    }
+    const attachment = attachmentFromMediaBlock(media, agentId);
+    if (attachment) attachments.push(attachment);
+  };
+
   for (const block of content) {
     if (!block || typeof block !== "object") continue;
     const result = block as Record<string, unknown>;
     if (result.type !== "tool_result") continue;
-    const artifact = result.artifact;
-    if (!artifact || typeof artifact !== "object") continue;
-    const media = artifact as Record<string, unknown>;
-    const path = String(media.path || "");
-    const mediaType = String(
-      (media.source as Record<string, unknown> | undefined)?.media_type ||
-        media.media_type ||
-        "",
-    );
-    const filename = String(media.filename || basename(path) || "附件");
-    let url = String(media.url || "");
-    if (!url && path && agentId) {
-      url = workspaceDownloadPath(agentId, path);
+    collect(result.artifact);
+    const output = result.output;
+    if (!output) continue;
+    if (typeof output === "object") {
+      if (Array.isArray(output)) output.forEach(collect);
+      else collect(output);
+      continue;
     }
-    if (!url) continue;
-    attachments.push({
-      kind: attachmentKind(mediaType, filename),
-      url,
-      filename,
-      ...(mediaType ? { mediaType } : {}),
-    });
+    if (typeof output === "string") {
+      const text = output.trim();
+      if (text.startsWith("{") || text.startsWith("[")) {
+        try {
+          const parsed = JSON.parse(text) as unknown;
+          if (Array.isArray(parsed)) parsed.forEach(collect);
+          else collect(parsed);
+          continue;
+        } catch {
+          // Not JSON: fall through to the plain-text URL scan.
+        }
+      }
+      attachments.push(...attachmentsFromToolOutputText(text));
+    }
   }
   return attachments;
 }

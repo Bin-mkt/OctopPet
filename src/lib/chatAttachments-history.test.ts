@@ -119,3 +119,84 @@ describe("attachmentsFromInbound / tool content", () => {
     );
   });
 });
+
+describe("attachmentsFromToolContent shapes", () => {
+  it("accepts the media block as the tool_result output object", () => {
+    const attachments = attachmentsFromToolContent(
+      [
+        {
+          type: "tool_result",
+          id: "c1",
+          name: "send_file_to_user",
+          output: {
+            type: "file",
+            path: "outbound/notes.txt",
+            filename: "notes.txt",
+            media_type: "text/plain",
+          },
+        },
+      ],
+      "a1",
+    );
+    expect(attachments).toEqual([
+      {
+        kind: "file",
+        url: "/api/agents/a1/workspace/download?path=outbound%2Fnotes.txt",
+        filename: "notes.txt",
+        mediaType: "text/plain",
+      },
+    ]);
+  });
+
+  it("accepts output as a JSON string of content blocks with preview_url", () => {
+    const attachments = attachmentsFromToolContent(
+      [
+        {
+          type: "tool_result",
+          output: JSON.stringify([
+            {
+              type: "image",
+              preview_url:
+                "/api/agents/a1/media/preview?source=outbound%2Fshot.png&mime_type=image/png",
+              filename: "shot.png",
+            },
+          ]),
+        },
+      ],
+      "a1",
+    );
+    expect(attachments[0].url).toBe(
+      "/api/agents/a1/media/preview?source=outbound%2Fshot.png&mime_type=image/png",
+    );
+    expect(attachments[0].kind).toBe("image");
+  });
+
+  it("harvests media URLs in rewritten plain-text output", () => {
+    const attachments = attachmentsFromToolContent(
+      [
+        {
+          type: "tool_result",
+          output:
+            "image: /api/agents/a1/media/preview?source=outbound%2Fclip.mp4&mime_type=video/mp4",
+        },
+      ],
+      "a1",
+    );
+    expect(attachments).toHaveLength(1);
+    expect(attachments[0].filename).toBe("clip.mp4");
+    expect(attachments[0].kind).toBe("video");
+  });
+
+  it("ignores tool_result blocks without media", () => {
+    expect(
+      attachmentsFromToolContent(
+        [
+          { type: "tool_result", output: "ok" },
+          { type: "tool_result", output: {} },
+          { type: "text", text: "nope" },
+        ],
+        "a1",
+      ),
+    ).toEqual([]);
+  });
+});

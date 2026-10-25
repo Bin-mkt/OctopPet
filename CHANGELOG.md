@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.6] - 2026-10-26
+
+### Fixed
+
+- 附件下载卡在"保存中"：桌宠是无主窗口的 Accessory 应用，系统保存对话框
+  （rfd sheet modal）可能根本不弹出，回调永不返回。现在附件直接存入
+  `~/Downloads`（自动避免重名），按钮下方显示已保存路径
+- 重新打开/退出重进后文件消息消失：历史里的工具结果有多 种服务器形态
+  （artifact 对象、output 为媒体块对象、output 为带 preview_url 的 JSON
+  字符串或改写后的纯文本 URL），现在全部识别并还原成卡片
+
+### Added
+
+- 会话列表：顶栏新增「会话」按钮，打开后覆盖式列出该 agent 的历史会话
+  （标题、时间、当前会话高亮、空标题兜底为"新会话"），点击即切换并加载
+  该会话的历史消息；流式输出中切换会先停止当前回合
+
 ## [0.2.5] - 2026-10-24
 
 ### Added

@@ -1,6 +1,9 @@
+import { useMemo, useState } from "react";
+
 import Composer from "../components/Composer";
 import ChatChrome from "../components/ChatChrome";
 import ChatResizeChrome from "../components/ChatResizeChrome";
+import ChatSessionList from "../components/ChatSessionList";
 import MessageList from "../components/MessageList";
 import QueuedMessages from "../components/QueuedMessages";
 import { useChatController } from "../hooks/useChatController";
@@ -11,6 +14,13 @@ import { tauriApi } from "../lib/tauriApi";
 export default function ChatWindow() {
   const chat = useChatController();
   useEscapeHidesWindow();
+  const [sessionsOpen, setSessionsOpen] = useState(false);
+  const sessionTitle = useMemo(() => {
+    const active = (chat.sessions ?? []).find(
+      (session) => session.threadId === chat.activeThreadId,
+    );
+    return active ? active.title.trim() || "新会话" : "";
+  }, [chat.sessions, chat.activeThreadId]);
 
   if (chat.needsSettings) {
     return (
@@ -36,11 +46,31 @@ export default function ChatWindow() {
       ref={chat.rootRef}
     >
       <ChatChrome
-        onNewSession={() => void chat.startNewSession()}
+        sessionTitle={sessionTitle}
+        sessionsOpen={sessionsOpen}
+        onToggleSessions={() => {
+          if (!sessionsOpen) void chat.refreshSessions();
+          setSessionsOpen((open) => !open);
+        }}
+        onNewSession={() => {
+          setSessionsOpen(false);
+          void chat.startNewSession();
+        }}
         newSessionDisabled={
           chat.loadingHistory || chat.connection === "streaming"
         }
       />
+      {sessionsOpen ? (
+        <ChatSessionList
+          sessions={chat.sessions}
+          activeThreadId={chat.activeThreadId}
+          onPick={(threadId) => {
+            setSessionsOpen(false);
+            void chat.switchThread(threadId);
+          }}
+          onClose={() => setSessionsOpen(false)}
+        />
+      ) : null}
       <div className="chat-body">
         {chat.error ? (
           <div className="chat-error" role="alert">
